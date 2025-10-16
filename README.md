@@ -1,5 +1,5 @@
 # 使用方式
-1. git clone
+1. `git clone https://github.com/rrkia/guokao_major_helper.git`
 2. 准备好每一页都去掉了第一行的国考岗位表
 3. 查找你的本科专业代码或名称
 4. `python guokao_filter2.py --code $专业代码 --input xxxxxx.xls`
