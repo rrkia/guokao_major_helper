@@ -2,9 +2,21 @@ import csv
 import argparse
 import pandas as pd
 import os
+import regex as re # 由于部分函数使用了regex作变量名，暂时这么处理
+
+def regex_contains(s, rx):
+    return bool(rx.search(s))
 
 major_list=[{}, {}, {}]   # 第一个，第二个和第三个分别为1级（工学）、2级（电子信息类）、3级（电子信息工程），从代码映射到Major类
 reverse_list=[{}, {}, {}] # 同上，但是从名字映射到Major类
+gender_dict={
+    '女性': 0,
+    '女': 0,
+    'female': 0,
+    '男性': 1,
+    '男': 1,
+    'male': 1
+}
 
 class Major:
     def __init__(self, code, name, syn_list, regex=None):
@@ -63,7 +75,7 @@ def find_code(code=None):
     if code!=None:
         level=0
         code1=code
-        result="不限"
+        result="不限|无限制"
         if len(code)==2:
             level=1
         elif len(code)==4:
@@ -72,7 +84,7 @@ def find_code(code=None):
             level=3
         while level>0:
             target = major_list[level-1][code1]
-            result = add_regex(result, target)
+            result = add_regex(result, target) # 用‘|’将专业可能满足的多个正则表达式连接在一起
             for i in range(0, len(target.syn_list)):
                 friend = name_to_major(target.syn_list[i])
                 if friend==None:
@@ -84,7 +96,7 @@ def find_code(code=None):
 
 def find_name(name=None):
     if name!=None:
-        result="不限"# 同上
+        result="不限|无限制"
         target = name_to_major(name)
         if target==None:
             raise FileNotFoundError("未找到专业，请检查你的输入或csv文件")
@@ -107,6 +119,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--code", default=None, help="专业代码，将优先使用这个信息", required=False)
     parser.add_argument("--name", default=None, help="专业名称，如果你不输入专业代码将使用这个信息", required=False)
+    parser.add_argument("--gender", default=None, help="性别", required=False)
     parser.add_argument("--input", default=None, help="删除了第一行的国考岗位表", required=False)
     # parser.add_argument("--edu", default=None, help="学历", required=False) # 准备适配硕士学历
     parser.add_argument("--output", default="output.xlsx", help="输出文件", required=False)
@@ -114,22 +127,29 @@ if __name__ == "__main__":
     # parser.add_argument("--project", default=None, help="参与基层服务项目", required=False)
     args = parser.parse_args()
 
-    result = None
+    gender_neg_regex = None
+    if args.gender!=None:
+        gender = gender_dict[args.gender] # 1：男 0：女
+        gender_neg_regex = '女性' if gender else '男性'
+
+    major_regex = None
     if args.code!=None:
-        result=find_code(args.code)
+        major_regex=find_code(args.code)
     elif args.name!=None:
-        result=find_name(args.name)
-    else:
-        raise ValueError("请输入专业代码(--code)或完整的专业名称(--name)")
+        major_regex=find_name(args.name)
     
     if args.input!=None:
-        if result==None:
-            raise RuntimeError("未成功生成正则表达式")
         dfs=pd.read_excel(io=args.input, sheet_name=None, dtype={'部门代码':str, '职位代码':str})
         with pd.ExcelWriter(args.output) as writer:
             for sheet_name, df in dfs.items():
-                df = df[df['专业'].str.contains(result, regex=True)]
+                if major_regex!=None and type(major_regex)==str and (args.name!=None or args.code!=None):
+                    classifier_major = re.compile(major_regex)
+                    df = df[df['专业'].apply(regex_contains, args=(classifier_major,))] # 解决PatternError("look-behind requires fixed-width pattern")
+                    #df = df[df['专业'].str.contains(major_regex, regex=True)]
+                if gender_neg_regex!=None and args.gender!=None:
+                    df = df[~df['备注'].str.contains(gender_neg_regex, na=False)]
                 df.to_excel(writer, sheet_name=sheet_name)
     else:
-        print(result)
+        if major_regex!=None:
+            print("用于匹配专业的正则表达式:", major_regex)
 
